@@ -20,7 +20,8 @@
 //! ```
 
 #![cfg_attr(all(test, feature = "unstable"), feature(test))]
-#[cfg(all(test, feature = "unstable"))] extern crate test;
+#[cfg(all(test, feature = "unstable"))]
+extern crate test;
 
 use std::mem;
 
@@ -28,12 +29,14 @@ use std::mem;
 pub struct Iter<T: Ieee754> {
     from: T,
     to: T,
-    done: bool
+    done: bool,
 }
 impl<T: Ieee754> Iterator for Iter<T> {
     type Item = T;
     fn next(&mut self) -> Option<T> {
-        if self.done { return None }
+        if self.done {
+            return None;
+        }
 
         let x = self.from;
         let y = x.next();
@@ -44,24 +47,26 @@ impl<T: Ieee754> Iterator for Iter<T> {
             self.done = true;
         }
         self.from = y;
-        return Some(x)
+        return Some(x);
     }
 
     fn size_hint(&self) -> (usize, Option<usize>) {
         if self.done {
-            return (0, Some(0))
+            return (0, Some(0));
         }
 
         let high_pos = 8 * mem::size_of::<T>() - 1;
         let high_mask = 1 << high_pos;
 
         let from_ = self.from.bits().as_u64();
-        let (from, from_sign) = (from_ & !high_mask,
-                                 from_ & high_mask != 0);
+        let (from, from_sign) = (from_ & !high_mask, from_ & high_mask != 0);
         let to_ = self.to.bits().as_u64();
-        let (to, to_sign) = (to_ & !high_mask,
-                             to_ & high_mask != 0);
-        let from = if from_sign { -(from as i64) } else { from as i64 };
+        let (to, to_sign) = (to_ & !high_mask, to_ & high_mask != 0);
+        let from = if from_sign {
+            -(from as i64)
+        } else {
+            from as i64
+        };
         let to = if to_sign { -(to as i64) } else { to as i64 };
 
         let distance = (to - from + 1) as u64;
@@ -75,7 +80,9 @@ impl<T: Ieee754> Iterator for Iter<T> {
 }
 impl<T: Ieee754> DoubleEndedIterator for Iter<T> {
     fn next_back(&mut self) -> Option<T> {
-        if self.done { return None }
+        if self.done {
+            return None;
+        }
 
         let x = self.to;
         let y = x.prev();
@@ -83,7 +90,7 @@ impl<T: Ieee754> DoubleEndedIterator for Iter<T> {
             self.done = true;
         }
         self.to = y;
-        return Some(x)
+        return Some(x);
     }
 }
 
@@ -91,10 +98,14 @@ pub trait Bits: Eq + PartialEq + PartialOrd + Ord + Copy {
     fn as_u64(self) -> u64;
 }
 impl Bits for u32 {
-    fn as_u64(self) -> u64 { self as u64 }
+    fn as_u64(self) -> u64 {
+        self as u64
+    }
 }
 impl Bits for u64 {
-    fn as_u64(self) -> u64 { self }
+    fn as_u64(self) -> u64 {
+        self
+    }
 }
 
 /// Types that are IEEE754 floating point numbers.
@@ -373,9 +384,9 @@ macro_rules! mk_impl {
             #[inline]
             fn upto(self, lim: Self) -> Iter<Self> {
                 assert!(self <= lim);
-                // map -0.0 to 0.0, i.e. ensure that any zero is
-                // stored in a canonical manner. This is necessary to
-                // use bit-hacks for the comparison in next.
+// map -0.0 to 0.0, i.e. ensure that any zero is
+// stored in a canonical manner. This is necessary to
+// use bit-hacks for the comparison in next.
                 #[inline(always)]
                 fn canon(x: $f) -> $f { if x == 0.0 { 0.0 } else { x } }
 
@@ -402,13 +413,15 @@ macro_rules! mk_impl {
 
             #[inline]
             fn next(self) -> Self {
+// map -0.0 to +0.0
+                let this = if self == 0.0 { 0.0 } else { self };
                 let abs_mask = (!(0 as Self::Bits)) >> 1;
-                let (sign, _expn, _signif) = self.decompose_raw();
-                let mut bits = self.bits();
+                let (sign, _expn, _signif) = this.decompose_raw();
+                let mut bits = this.bits();
                 if sign {
                     bits -= 1;
                     if bits == !abs_mask {
-                        // normalise -0.0 to +0.0
+// normalise -0.0 to +0.0
                         bits = 0
                     }
                 } else {
@@ -568,6 +581,16 @@ macro_rules! mk_impl {
                     assert_eq!(x + x.ulp().unwrap(), next);
                     let y = -x;
                     assert_eq!(y - y.ulp().unwrap(), -next);
+                }
+            }
+
+            #[test]
+            fn next_prev_zero_not_nan() {
+                let cases = [-0.0 as $f, 0.0 as $f];
+
+                for x in &cases {
+                    assert!(!x.next().is_nan());
+                    assert!(!x.prev().is_nan());
                 }
             }
 
